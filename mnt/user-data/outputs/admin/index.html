@@ -1,37 +1,117 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset='utf-8' />
-    <meta name='viewport' content='width=device-width, initial-scale=1' />
-    <title>Portfolio Admin - GenAI Study Guide</title>
-    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-  </head>
-  <body>
-    <!-- Force-load identity widget and handle invite links -->
-    <script>
-      (function () {
-        function openInvite() {
-          try {
-            const hash = window.location.hash || "";
-            if (hash.includes("invite_token=")) {
-              window.netlifyIdentity.open("signup");
-            }
-          } catch (e) {
-            console.error("Error handling invite:", e);
-          }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - GenAI Study Guide</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0f0f0f;
+            color: #e0e0e0;
         }
+        .admin-card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #76b900;
+            margin-bottom: 10px;
+        }
+        .info {
+            color: #888;
+            margin-bottom: 20px;
+        }
+        .feature {
+            padding: 15px;
+            margin: 10px 0;
+            background: #252525;
+            border-radius: 8px;
+            border-left: 3px solid #76b900;
+        }
+        .feature h3 {
+            margin: 0 0 5px 0;
+            color: #76b900;
+        }
+        a {
+            color: #00a8e0;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #76b900;
+            color: white;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-weight: 600;
+        }
+        .btn:hover {
+            background: #5a8f00;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-card">
+        <h1>🎓 GenAI Study Guide - Admin</h1>
+        <p class="info">Enterprise learning platform with secure authentication and data management</p>
         
-        if (window.netlifyIdentity) {
-          window.netlifyIdentity.on("init", function () {
-            openInvite();
-          });
-          // Also try immediately (sometimes init already happened)
-          openInvite();
-        }
-      })();
-    </script>
-    
-    <!-- Decap CMS (Netlify CMS) -->
-    <script src='https://unpkg.com/decap-cms@^3.0.0/dist/decap-cms.js'></script>
-  </body>
+        <div class="feature">
+            <h3>📊 Current Setup</h3>
+            <p>The application uses local authentication with browser-based storage.</p>
+            <p><strong>Data Location:</strong> Browser LocalStorage (user-specific)</p>
+        </div>
+        
+        <div class="feature">
+            <h3>🔐 Authentication</h3>
+            <p>Simple email/password authentication with "Remember Me" functionality</p>
+            <p>Each user gets isolated data storage based on their email hash</p>
+        </div>
+        
+        <div class="feature">
+            <h3>💾 Data Storage</h3>
+            <p>All user data is stored locally in the browser:</p>
+            <ul>
+                <li>Study topics and categories</li>
+                <li>Completion progress</li>
+                <li>Custom content</li>
+            </ul>
+        </div>
+        
+        <div class="feature">
+            <h3>🚀 Features</h3>
+            <ul>
+                <li>User-specific data isolation</li>
+                <li>Import/Export functionality</li>
+                <li>Custom category and topic creation</li>
+                <li>Progress tracking</li>
+                <li>Search and filter capabilities</li>
+            </ul>
+        </div>
+        
+        <div class="feature">
+            <h3>🔧 Future Enhancements</h3>
+            <p>For production deployment, consider:</p>
+            <ul>
+                <li>Backend API with database (PostgreSQL/MongoDB)</li>
+                <li>OAuth authentication (Google, GitHub)</li>
+                <li>Real-time collaboration features</li>
+                <li>Analytics and reporting</li>
+                <li>Mobile app integration</li>
+            </ul>
+        </div>
+        
+        <a href="../index.html" class="btn">← Back to Application</a>
+    </div>
+</body>
 </html>
