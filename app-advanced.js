@@ -108,6 +108,56 @@ const Storage = (() => {
     return { sanitize, slugify, getJSON, setJSON, getText, setText, migrateLegacyIfNeeded, getUsers, setUsers, getCurrentUser, setCurrentUser, key };
 })();
 
+// ============================================
+// Auth (Netlify Identity) - Invite-only friendly
+// ============================================
+const Auth = (() => {
+    const hasIdentity = () => typeof window !== 'undefined' && !!window.netlifyIdentity;
+    const getUser = () => (hasIdentity() ? window.netlifyIdentity.currentUser() : null);
+
+    function updateAuthUI() {
+        const user = getUser();
+        const gate = document.getElementById('authGate');
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const who = document.getElementById('authWho');
+
+        if (who) who.textContent = user ? (user.email || user.user_metadata?.full_name || 'Signed in') : 'Not signed in';
+        if (loginBtn) loginBtn.style.display = user ? 'none' : 'inline-flex';
+        if (logoutBtn) logoutBtn.style.display = user ? 'inline-flex' : 'none';
+        if (gate) gate.classList.toggle('active', !!hasIdentity() && !user);
+    }
+
+    function bind() {
+        if (!hasIdentity()) { updateAuthUI(); return; }
+
+        window.netlifyIdentity.on('init', () => {
+            updateAuthUI();
+            const user = getUser();
+            if (user) setUser(`netlify:${user.id}`);
+        });
+
+        window.netlifyIdentity.on('login', (user) => {
+            updateAuthUI();
+            setUser(`netlify:${user.id}`);
+            window.netlifyIdentity.close();
+        });
+
+        window.netlifyIdentity.on('logout', () => {
+            updateAuthUI();
+            setUser('default');
+        });
+
+        window.netlifyIdentity.init();
+        updateAuthUI();
+    }
+
+    function openLogin() { if (hasIdentity()) window.netlifyIdentity.open('login'); }
+    function logout() { if (hasIdentity()) window.netlifyIdentity.logout(); }
+
+    return { bind, openLogin, logout, updateAuthUI };
+})();
+
 function setUser(userId) {
     currentTopic = null;
     currentUserId = userId || 'default';
@@ -216,7 +266,11 @@ function resetCurrentUserToDefault() {
 function init() {
     Storage.migrateLegacyIfNeeded();
     bindEditableHomeHeader();
-    setUser(Storage.getCurrentUser());
+    Auth.bind();
+    // If logged in via Netlify Identity, Auth.bind() will set the user.
+    // Otherwise fall back to local profile.
+    const u = (typeof window !== 'undefined' && window.netlifyIdentity) ? window.netlifyIdentity.currentUser() : null;
+    setUser(u ? `netlify:${u.id}` : Storage.getCurrentUser());
 }
 
 // Load progress from localStorage
@@ -225,34 +279,65 @@ function loadProgress() {
     completedTopics = new Set();
     studyTopics = JSON.parse(JSON.stringify(DEFAULT_STUDY_TOPICS));
 
-    const saved = localStorage.getItem(Storage.key('progress'));
-    if (saved) {
+    const data = Storage.getJSON('progress', null);
+    if (data) {
         try {
-            const data = JSON.parse(saved);
             completedTopics = new Set(data.completed || []);
-            if (data.studyTopics) {
-                studyTopics = data.studyTopics;
-            }
+            if (data.studyTopics) studyTopics = data.studyTopics;
         } catch (e) {
-            console.warn('Failed to parse saved progress; falling back to defaults', e);
+            console.warn('Failed to load saved progress; falling back to defaults', e);
         }
     }
 }
 
 // Save progress to localStorage
-function saveProgress() {
-    const data = {
-        completed: Array.from(completedTopics),
-        studyTopics: studyTopics
+let _saveTimer = null;
+let _saveQueued = false;
+function saveProgress(opts = {}) {
+    const { immediate = false, showIndicator = true } = opts;
+    const doSave = () => {
+        const data = {
+            completed: Array.from(completedTopics),
+            studyTopics: studyTopics
+        };
+        Storage.setJSON('progress', data);
+        if (showIndicator) showSavedIndicator();
     };
-    localStorage.setItem(Storage.key('progress'), JSON.stringify(data));
-    showSavedIndicator();
+
+    if (immediate) {
+        doSave();
+        return;
+    }
+
+    _saveQueued = true;
+    if (_saveTimer) return;
+
+    const schedule = (fn) => {
+        if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(fn, { timeout: 400 });
+        } else {
+            setTimeout(fn, 50);
+        }
+    };
+
+    _saveTimer = setTimeout(() => {
+        schedule(() => {
+            _saveTimer = null;
+            if (_saveQueued) {
+                _saveQueued = false;
+                doSave();
+            }
+        });
+    }, 120);
 }
 
 // Render topics list in sidebar
 function renderTopicsList() {
     const topicsList = document.getElementById('topicsList');
+    if (!topicsList) return;
     topicsList.innerHTML = '';
+
+    const frag = document.createDocumentFragment();
 
     Object.entries(studyTopics).forEach(([categoryKey, category]) => {
         const categoryDiv = document.createElement('div');
@@ -273,13 +358,15 @@ function renderTopicsList() {
         categoryItems.className = 'category-items';
         categoryItems.id = `category-${categoryKey}`;
 
-        category.topics.forEach(topic => {
+        (category.topics || []).forEach((topic) => {
+            const isDone = completedTopics.has(topic.id);
             const topicItem = document.createElement('div');
-            topicItem.className = `topic-item ${completedTopics.has(topic.id) ? 'completed' : ''}`;
-            
+            topicItem.className = `topic-item ${isDone ? 'completed' : ''}`;
+
+            // Avoid embedding JSON in HTML (huge & slow). Lookup by id instead.
             topicItem.innerHTML = `
-                <div class="topic-item-content" onclick="loadTopic(${JSON.stringify(topic).replace(/"/g, '&quot;')})">
-                    <div class="progress-indicator">${completedTopics.has(topic.id) ? '✓' : ''}</div>
+                <div class="topic-item-content" onclick="loadTopicById('${categoryKey}','${topic.id}', event)">
+                    <div class="progress-indicator">${isDone ? '✓' : ''}</div>
                     <span>${topic.name}</span>
                 </div>
                 <div class="topic-item-actions">
@@ -293,16 +380,21 @@ function renderTopicsList() {
 
         categoryDiv.appendChild(categoryHeader);
         categoryDiv.appendChild(categoryItems);
-        topicsList.appendChild(categoryDiv);
+        frag.appendChild(categoryDiv);
     });
 
+    topicsList.appendChild(frag);
+
     const firstCategory = Object.keys(studyTopics)[0];
-    if (firstCategory) {
-        toggleCategory(firstCategory);
-    }
+    if (firstCategory) toggleCategory(firstCategory);
 }
 
 // Toggle category expansion
+function loadTopicById(categoryKey, topicId, evt) {
+    const topic = studyTopics?.[categoryKey]?.topics?.find(t => t.id === topicId);
+    if (topic) loadTopic(topic, evt);
+}
+
 function toggleCategory(categoryKey) {
     const categoryItems = document.getElementById(`category-${categoryKey}`);
     if (categoryItems) {
@@ -311,13 +403,13 @@ function toggleCategory(categoryKey) {
 }
 
 // Load topic content
-function loadTopic(topic) {
+function loadTopic(topic, evt) {
     currentTopic = topic;
     const contentArea = document.getElementById('contentArea');
 
     document.querySelectorAll('.topic-item').forEach(item => item.classList.remove('active'));
-    if (event && event.currentTarget) {
-        event.currentTarget.closest('.topic-item')?.classList.add('active');
+    if (evt && evt.currentTarget) {
+        evt.currentTarget.closest('.topic-item')?.classList.add('active');
     }
 
     let contentHTML = `
