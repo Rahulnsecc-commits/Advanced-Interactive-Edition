@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width, initial-scale=1' />
+    <title>Portfolio Admin - GenAI Study Guide</title>
+    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+  </head>
+  <body>
+    <!-- Force-load identity widget and handle invite links -->
+    <script>
+      (function () {
+        function openInvite() {
+          try {
+            const hash = window.location.hash || "";
+            if (hash.includes("invite_token=")) {
+              window.netlifyIdentity.open("signup");
+            }
+          } catch (e) {
+            console.error("Error handling invite:", e);
+          }
+        }
+        
+        if (window.netlifyIdentity) {
+          window.netlifyIdentity.on("init", function () {
+            openInvite();
+          });
+          // Also try immediately (sometimes init already happened)
+          openInvite();
+        }
+      })();
+    </script>
+    
+    <!-- Decap CMS (Netlify CMS) -->
+    <script src='https://unpkg.com/decap-cms@^3.0.0/dist/decap-cms.js'></script>
+  </body>
+</html>
