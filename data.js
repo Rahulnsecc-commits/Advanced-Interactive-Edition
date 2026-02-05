@@ -1,4 +1,4 @@
-let studyTopics = {
+var studyTopics = window.studyTopics = {
     "foundations": {
         "name": "Foundations",
         "icon": "🏗️",

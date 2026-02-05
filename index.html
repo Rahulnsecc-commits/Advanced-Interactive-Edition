@@ -201,12 +201,54 @@
         </div>
     </div>
 
+
+    <!-- Register Modal -->
+    <div id="registerModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create Account</h2>
+                <button class="modal-close" onclick="closeRegisterForm()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="registerName" placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="registerEmail" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="registerPassword" placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password</label>
+                    <input type="password" id="registerConfirmPassword" placeholder="••••••••">
+                </div>
+                <div class="form-group" style="margin-top: 10px;">
+                    <small style="color: var(--text-muted);">
+                        Already have an account?
+                        <a href="javascript:void(0)" onclick="showLoginForm()" style="color: var(--accent); text-decoration: none; font-weight: 600;">
+                            Sign in
+                        </a>
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeRegisterForm()">Cancel</button>
+                <button class="btn-primary" onclick="handleRegister()">Create Account</button>
+            </div>
+        </div>
+    </div>
+
+
     <!-- Save Indicator -->
     <div id="saveIndicator" class="save-indicator">✓ Saved</div>
 
     <!-- Scripts -->
     <script src="data.js"></script>
-    <script src="auth.js"></script>
     <script src="app.js"></script>
+    <script src="auth.js"></script>
 </body>
 </html>

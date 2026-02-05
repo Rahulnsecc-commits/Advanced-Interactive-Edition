@@ -1,5 +1,8 @@
+if (typeof studyTopics === 'undefined') { window.studyTopics = {}; }
+
 // Main Application Logic
-let completedTopics = new Set();
+let completedTopics = window.completedTopics || new Set();
+window.completedTopics = completedTopics;
 let currentTopic = null;
 let editingCategory = null;
 let editingTopic = null;
@@ -63,11 +66,12 @@ function createTopicElement(categoryKey, topic) {
     const isCompleted = completedTopics.has(topic.id);
     topicItem.className = `topic-item ${isCompleted ? 'completed' : ''}`;
     
+        topicItem.dataset.topicId = topic.id;
     // Escape JSON for HTML attribute
     const topicJson = JSON.stringify(topic).replace(/"/g, '&quot;');
     
     topicItem.innerHTML = `
-        <div class="topic-item-content" onclick="loadTopic(${topicJson})">
+        <div class="topic-item-content" onclick="loadTopic(event, ${topicJson})">
             <div class="progress-indicator">${isCompleted ? '✓' : ''}</div>
             <span>${topic.name}</span>
         </div>
@@ -89,7 +93,7 @@ function toggleCategory(categoryKey) {
 }
 
 // Load topic content
-function loadTopic(topic) {
+function loadTopic(evt, topic) {
     currentTopic = topic;
     const contentArea = document.getElementById('contentArea');
     
@@ -121,7 +125,13 @@ function loadTopic(topic) {
     document.querySelectorAll('.topic-item').forEach(item => {
         item.classList.remove('active');
     });
-    event.target.closest('.topic-item')?.classList.add('active');
+    const clickedItem = evt?.target?.closest?.('.topic-item');
+    if (clickedItem) {
+        clickedItem.classList.add('active');
+    } else {
+        const match = document.querySelector(`.topic-item[data-topic-id="${topic.id}"]`);
+        match?.classList.add('active');
+    }
 }
 
 // Render topic content sections
@@ -172,7 +182,7 @@ function markComplete() {
         saveProgress();
         renderTopicsList();
         updateProgress();
-        loadTopic(currentTopic);
+        loadTopic(null, currentTopic);
     }
 }
 
@@ -183,7 +193,7 @@ function markIncomplete() {
         saveProgress();
         renderTopicsList();
         updateProgress();
-        loadTopic(currentTopic);
+        loadTopic(null, currentTopic);
     }
 }
 
