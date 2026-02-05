@@ -784,7 +784,7 @@
                         <div class="user-dropdown" id="userDropdown">
                             <div class="user-dropdown-header">
                                 <div style="font-weight: 600;" id="userName">User</div>
-                                <div class="user-email" id="userEmail">user@example.com</div>
+                                <div class="user-email" id="userEmail"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="84f1f7e1f6c4e1fce5e9f4e8e1aae7ebe9">[email&#160;protected]</a></div>
                             </div>
                             <div class="user-dropdown-divider"></div>
                             <div class="user-dropdown-item" onclick="handleLogout()">
@@ -796,24 +796,129 @@
                 </div>
                 
                 <div class="search-box">
-                    <input type="text" id="searchInput" placeholder="🔍 Search topics..." oninput="filterTopics()">
+                    <input type="text" id="searchInput" placeholder="🔍 Search topics..." oninput="handleSearch(event)">
                 </div>
                 
-                <div id="topicList"></div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%">
+                        <span id="progressText">0%</span>
+                    </div>
+                </div>
+                
+                <button class="add-category-btn" onclick="showAddCategoryModal()" style="width: calc(100% - 40px); margin: 15px 20px; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    ➕ Add New Category
+                </button>
+                
+                <div id="topicsList"></div>
             </div>
             
             <!-- Main Content -->
             <div class="main-content" id="mainContent">
-                <div class="content-header">
-                    <div class="content-title">
-                        <h2 id="contentTitle">Welcome to GenAI Study Guide</h2>
-                        <div class="content-meta" id="contentMeta"></div>
+                <div id="contentArea">
+                    <div class="content-header">
+                        <div class="content-title">
+                            <h2>🎯 Welcome to GenAI Study Guide</h2>
+                            <p style="color: var(--text-muted); margin-top: 10px; font-size: 1.05rem;">
+                                Select a topic from the sidebar to begin studying.<br>
+                                <span style="color: var(--accent); font-size: 0.9rem;">✨ All your progress and notes are saved automatically.</span>
+                            </p>
+                        </div>
                     </div>
-                    <div class="action-buttons" id="actionButtons"></div>
                 </div>
-                
-                <div id="contentBody"></div>
             </div>
+        </div>
+    </div>
+
+    <!-- LinkedIn Post Modal -->
+    <div class="modal" id="linkedinModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">📱 Create LinkedIn Post</h2>
+                <button class="close-btn" onclick="closeLinkedInModal()">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>📝 Post Content</label>
+                <textarea id="linkedinContent" rows="12"></textarea>
+                <small style="color: var(--text-muted); display: block; margin-top: 8px;">
+                    ✏️ Customize your post before sharing. The content below shows how it will appear on LinkedIn.
+                </small>
+            </div>
+            <div class="linkedin-preview" style="background: var(--bg-dark); padding: 20px; border-radius: 8px; margin-top: 15px;">
+                <div class="linkedin-preview-header" style="display: flex; gap: 12px; margin-bottom: 15px;">
+                    <div class="linkedin-avatar" style="width: 48px; height: 48px; border-radius: 50%; background: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">👤</div>
+                    <div class="linkedin-user-info">
+                        <div class="linkedin-user-name" style="font-weight: 600;">Your Name</div>
+                        <div class="linkedin-user-title" style="color: var(--text-muted); font-size: 0.85rem;">GenAI Solution Architect</div>
+                    </div>
+                </div>
+                <div class="linkedin-post-content" id="linkedinPreview" style="white-space: pre-wrap; line-height: 1.6;"></div>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" onclick="closeLinkedInModal()">Cancel</button>
+                <button class="btn btn-linkedin" onclick="copyLinkedInPost()">📋 Copy to Clipboard</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Modal -->
+    <div class="modal" id="categoryModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="categoryModalTitle">Add New Category</h2>
+                <button class="close-btn" onclick="closeCategoryModal()">&times;</button>
+            </div>
+            <form id="categoryForm" onsubmit="saveCategoryForm(event)">
+                <div class="form-group">
+                    <label>Category Name *</label>
+                    <input type="text" id="categoryName" required>
+                </div>
+                <div class="form-group">
+                    <label>Icon (emoji)</label>
+                    <input type="text" id="categoryIcon" maxlength="2" placeholder="e.g., 📚">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeCategoryModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Category</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Topic Modal -->
+    <div class="modal" id="topicModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="topicModalTitle">Add New Topic</h2>
+                <button class="close-btn" onclick="closeTopicModal()">&times;</button>
+            </div>
+            <form id="topicForm" onsubmit="saveTopicForm(event)">
+                <input type="hidden" id="topicCategory">
+                <input type="hidden" id="topicId">
+                <div class="form-group">
+                    <label>Topic Name *</label>
+                    <input type="text" id="topicName" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="topicDescription"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Time Estimate</label>
+                    <input type="text" id="topicTime" placeholder="e.g., 30 min">
+                </div>
+                <div class="form-group">
+                    <label>Difficulty</label>
+                    <select id="topicDifficulty">
+                        <option value="Beginner">Beginner</option>
+                        <option value="Intermediate">Intermediate</option>
+                        <option value="Advanced">Advanced</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeTopicModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Topic</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -979,7 +1084,7 @@
         <span>Saved Successfully!</span>
     </div>
 
-    <script src="data-latest.js"></script>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="data-latest.js"></script>
     <script src="app-advanced.js"></script>
     
     <!-- Netlify Identity Integration Script -->
@@ -1044,9 +1149,17 @@
             document.getElementById('userEmail').textContent = userEmail;
             document.getElementById('userInitials').textContent = initials;
             
-            // Initialize app (this should call your existing init function)
-            if (typeof initializeApp === 'function') {
-                initializeApp();
+            // Initialize app - call the init function from app-advanced.js
+            if (typeof init === 'function') {
+                init();
+            } else {
+                // Fallback: manually trigger initialization
+                console.log('Init function not found, loading manually...');
+                setTimeout(() => {
+                    if (typeof init === 'function') {
+                        init();
+                    }
+                }, 100);
             }
         }
 
@@ -1127,13 +1240,4 @@
         // Event listeners for pen controls
         if (document.getElementById('penSize')) {
             document.getElementById('penSize').addEventListener('input', updatePenPreview);
-            document.getElementById('penColor').addEventListener('input', updatePenPreview);
-        }
-        
-        // Initialize preview on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            updatePenPreview();
-        });
-    </script>
-</body>
-</html>
+            document.getElementById('penColor').addEventListener('inp
