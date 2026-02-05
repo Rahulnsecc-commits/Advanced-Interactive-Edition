@@ -4,340 +4,75 @@ let currentTopic = null;
 let editingCategory = null;
 let editingTopic = null;
 
-// Keep a pristine copy for per-user reset
-const DEFAULT_STUDY_TOPICS = JSON.parse(JSON.stringify(studyTopics));
+// Auth + per-user storage (Netlify Identity)
+let AUTH = {
+    user: null,
+    storageKey: 'studyProgress::public'
+};
 
-
-// ============================================
-// Modular core: Storage + User Profiles
-// ============================================
-let currentUserId = 'default';
-
-const Storage = (() => {
-    const APP = 'gsg'; // GenAI Study Guide
-    const sanitize = (s) => (s || '').toString().trim().replace(/\s+/g, ' ').slice(0, 60);
-    const slugify = (s) => sanitize(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const key = (name) => `${APP}:${currentUserId}:${name}`;
-
-    function getJSON(name, fallback = null) {
-        try {
-            const raw = localStorage.getItem(key(name));
-            return raw ? JSON.parse(raw) : fallback;
-        } catch (e) {
-            console.error('Storage getJSON failed', name, e);
-            return fallback;
-        }
-    }
-
-    function setJSON(name, value) {
-        try {
-            localStorage.setItem(key(name), JSON.stringify(value));
-        } catch (e) {
-            console.error('Storage setJSON failed', name, e);
-        }
-    }
-
-    function getText(name, fallback = '') {
-        try {
-            const raw = localStorage.getItem(key(name));
-            return raw !== null ? raw : fallback;
-        } catch (e) {
-            console.error('Storage getText failed', name, e);
-            return fallback;
-        }
-    }
-
-    function setText(name, value) {
-        try {
-            localStorage.setItem(key(name), value ?? '');
-        } catch (e) {
-            console.error('Storage setText failed', name, e);
-        }
-    }
-
-    function migrateLegacyIfNeeded() {
-        // Old single-user key: 'studyProgress' -> move into default user namespace once
-        const legacy = localStorage.getItem(Storage.key('progress'));
-        const migratedFlag = localStorage.getItem(`${APP}:migratedLegacy`);
-        if (legacy && !migratedFlag) {
-            try {
-                localStorage.setItem(`${APP}:default:progress`, legacy);
-                localStorage.setItem(`${APP}:migratedLegacy`, '1');
-            } catch (e) {
-                console.warn('Legacy migration failed', e);
-            }
-        }
-    }
-
-    function getUsers() {
-        const users = getJSON('users', null); // names stored per-default? We'll store globally
-        // If users list is missing in current namespace, fall back to global list.
-        if (users) return users;
-        try {
-            const raw = localStorage.getItem(`${APP}:users`);
-            return raw ? JSON.parse(raw) : ['default'];
-        } catch {
-            return ['default'];
-        }
-    }
-
-    function setUsers(list) {
-        try {
-            localStorage.setItem(`${APP}:users`, JSON.stringify(list));
-        } catch (e) {
-            console.error('Storage setUsers failed', e);
-        }
-    }
-
-    function getCurrentUser() {
-        try {
-            return localStorage.getItem(`${APP}:currentUser`) || 'default';
-        } catch {
-            return 'default';
-        }
-    }
-
-    function setCurrentUser(id) {
-        try {
-            localStorage.setItem(`${APP}:currentUser`, id);
-        } catch (e) {
-            console.error('Storage setCurrentUser failed', e);
-        }
-    }
-
-    return { sanitize, slugify, getJSON, setJSON, getText, setText, migrateLegacyIfNeeded, getUsers, setUsers, getCurrentUser, setCurrentUser, key };
-})();
-
-// ============================================
-// Auth (Netlify Identity) - Invite-only friendly
-// ============================================
-const Auth = (() => {
-    const hasIdentity = () => typeof window !== 'undefined' && !!window.netlifyIdentity;
-    const getUser = () => (hasIdentity() ? window.netlifyIdentity.currentUser() : null);
-
-    function updateAuthUI() {
-        const user = getUser();
-        const gate = document.getElementById('authGate');
-        const loginBtn = document.getElementById('loginBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const who = document.getElementById('authWho');
-
-        if (who) who.textContent = user ? (user.email || user.user_metadata?.full_name || 'Signed in') : 'Not signed in';
-        if (loginBtn) loginBtn.style.display = user ? 'none' : 'inline-flex';
-        if (logoutBtn) logoutBtn.style.display = user ? 'inline-flex' : 'none';
-        if (gate) gate.classList.toggle('active', !!hasIdentity() && !user);
-    }
-
-    function bind() {
-        if (!hasIdentity()) { updateAuthUI(); return; }
-
-        window.netlifyIdentity.on('init', () => {
-            updateAuthUI();
-            const user = getUser();
-            if (user) setUser(`netlify:${user.id}`);
-        });
-
-        window.netlifyIdentity.on('login', (user) => {
-            updateAuthUI();
-            setUser(`netlify:${user.id}`);
-            window.netlifyIdentity.close();
-        });
-
-        window.netlifyIdentity.on('logout', () => {
-            updateAuthUI();
-            setUser('default');
-        });
-
-        window.netlifyIdentity.init();
-        updateAuthUI();
-    }
-
-    function openLogin() { if (hasIdentity()) window.netlifyIdentity.open('login'); }
-    function logout() { if (hasIdentity()) window.netlifyIdentity.logout(); }
-
-    return { bind, openLogin, logout, updateAuthUI };
-})();
-
-function setUser(userId) {
-    currentTopic = null;
-    currentUserId = userId || 'default';
-    Storage.setCurrentUser(currentUserId);
-
-    // Update UI labels
-    const label = document.getElementById('currentUserLabel');
-    const modalLabel = document.getElementById('userModalCurrent');
-    const pretty = (currentUserId === 'default') ? 'Default' : currentUserId;
-    if (label) label.textContent = pretty;
-    if (modalLabel) modalLabel.textContent = pretty;
-
-    // Load per-user header
-    const titleEl = document.getElementById('homeTitle');
-    const subEl = document.getElementById('homeSubtitle');
-    if (titleEl) titleEl.textContent = Storage.getText('homeTitle', titleEl.textContent || '📚 GenAI Study Guide');
-    if (subEl) subEl.textContent = Storage.getText('homeSubtitle', subEl.textContent || 'Advanced Interactive Edition');
-
-    // Load per-user data
-    loadProgress();
-    renderTopicsList();
-    updateProgress();
-    showWelcomeIfEmptySelection();
+function setAuthUser(user) {
+    AUTH.user = user || null;
+    const key = user && (user.id || user.email) ? (user.id || user.email) : 'public';
+    AUTH.storageKey = `studyProgress::${key}`;
 }
 
-function showWelcomeIfEmptySelection() {
-    if (!currentTopic) return;
+function getProgressKey() {
+    return AUTH.storageKey || 'studyProgress::public';
 }
 
-function bindEditableHomeHeader() {
-    const titleEl = document.getElementById('homeTitle');
-    const subEl = document.getElementById('homeSubtitle');
-    if (!titleEl || !subEl) return;
-
-    const save = () => {
-        Storage.setText('homeTitle', titleEl.textContent.trim() || '📚 GenAI Study Guide');
-        Storage.setText('homeSubtitle', subEl.textContent.trim() || 'Advanced Interactive Edition');
-        showSavedIndicator();
-    };
-
-    // Save on blur + Enter
-    [titleEl, subEl].forEach((el) => {
-        el.addEventListener('blur', save);
-        el.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                el.blur();
-            }
-        });
-    });
+// Debounced save to keep UI snappy
+let _saveTimer = null;
+function scheduleSaveProgress() {
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => {
+        _saveTimer = null;
+        saveProgressNow();
+    }, 200);
 }
 
-// User Modal actions
-function openUserModal() {
-    refreshUserList();
-    document.getElementById('userModal')?.classList.add('active');
-}
-function closeUserModal() {
-    document.getElementById('userModal')?.classList.remove('active');
-}
-function refreshUserList() {
-    const listEl = document.getElementById('userList');
-    if (!listEl) return;
-    const users = Storage.getUsers();
-    listEl.innerHTML = users.map((u) => {
-        const pretty = (u === 'default') ? 'Default' : u;
-        const cls = (u === currentUserId) ? 'user-chip active' : 'user-chip';
-        return `<button class="${cls}" onclick="switchUser('${u}')">${pretty}</button>`;
-    }).join('');
-}
-function switchUser(userId) {
-    setUser(userId);
-    refreshUserList();
-}
-function createUser() {
-    const input = document.getElementById('newUserName');
-    const nameRaw = input?.value || '';
-    const cleaned = Storage.sanitize(nameRaw);
-    if (!cleaned) return;
-    const id = Storage.slugify(cleaned) || cleaned;
-    const users = Storage.getUsers();
-    if (!users.includes(id)) {
-        users.push(id);
-        Storage.setUsers(users);
-    }
-    if (input) input.value = '';
-    setUser(id);
-    refreshUserList();
-}
-function resetCurrentUserToDefault() {
-    if (!confirm('Reset this user to default? This will remove this user’s saved edits & progress.')) return;
+function saveProgressNow() {
     try {
-        // Remove per-user keys we use
-        localStorage.removeItem(Storage.key('progress'));
-        localStorage.removeItem(Storage.key('homeTitle'));
-        localStorage.removeItem(Storage.key('homeSubtitle'));
+        const data = {
+            completed: Array.from(completedTopics),
+            studyTopics: studyTopics
+        };
+        localStorage.setItem(getProgressKey(), JSON.stringify(data));
+        showSavedIndicator();
     } catch (e) {
-        console.warn('Reset failed', e);
+        console.error('Failed to save progress:', e);
     }
-    // Reload fresh default content for user
-    setUser(currentUserId);
-    closeUserModal();
 }
+
 
 // Initialize the app
 function init() {
-    Storage.migrateLegacyIfNeeded();
-    bindEditableHomeHeader();
-    Auth.bind();
-    // If logged in via Netlify Identity, Auth.bind() will set the user.
-    // Otherwise fall back to local profile.
-    const u = (typeof window !== 'undefined' && window.netlifyIdentity) ? window.netlifyIdentity.currentUser() : null;
-    setUser(u ? `netlify:${u.id}` : Storage.getCurrentUser());
+    loadProgress();
+    renderTopicsList();
+    updateProgress();
 }
 
 // Load progress from localStorage
 function loadProgress() {
-    // Start from defaults for the active user
-    completedTopics = new Set();
-    studyTopics = JSON.parse(JSON.stringify(DEFAULT_STUDY_TOPICS));
-
-    const data = Storage.getJSON('progress', null);
-    if (data) {
-        try {
-            completedTopics = new Set(data.completed || []);
-            if (data.studyTopics) studyTopics = data.studyTopics;
-        } catch (e) {
-            console.warn('Failed to load saved progress; falling back to defaults', e);
+    const saved = localStorage.getItem(getProgressKey());
+    if (saved) {
+        const data = JSON.parse(saved);
+        completedTopics = new Set(data.completed || []);
+        if (data.studyTopics) {
+            studyTopics = data.studyTopics;
         }
     }
 }
 
 // Save progress to localStorage
-let _saveTimer = null;
-let _saveQueued = false;
-function saveProgress(opts = {}) {
-    const { immediate = false, showIndicator = true } = opts;
-    const doSave = () => {
-        const data = {
-            completed: Array.from(completedTopics),
-            studyTopics: studyTopics
-        };
-        Storage.setJSON('progress', data);
-        if (showIndicator) showSavedIndicator();
-    };
-
-    if (immediate) {
-        doSave();
-        return;
-    }
-
-    _saveQueued = true;
-    if (_saveTimer) return;
-
-    const schedule = (fn) => {
-        if (typeof requestIdleCallback === 'function') {
-            requestIdleCallback(fn, { timeout: 400 });
-        } else {
-            setTimeout(fn, 50);
-        }
-    };
-
-    _saveTimer = setTimeout(() => {
-        schedule(() => {
-            _saveTimer = null;
-            if (_saveQueued) {
-                _saveQueued = false;
-                doSave();
-            }
-        });
-    }, 120);
+function saveProgress() {
+    // Use debounced save to avoid UI stalls when adding categories/topics
+    scheduleSaveProgress();
 }
 
 // Render topics list in sidebar
 function renderTopicsList() {
     const topicsList = document.getElementById('topicsList');
-    if (!topicsList) return;
     topicsList.innerHTML = '';
-
-    const frag = document.createDocumentFragment();
 
     Object.entries(studyTopics).forEach(([categoryKey, category]) => {
         const categoryDiv = document.createElement('div');
@@ -358,15 +93,13 @@ function renderTopicsList() {
         categoryItems.className = 'category-items';
         categoryItems.id = `category-${categoryKey}`;
 
-        (category.topics || []).forEach((topic) => {
-            const isDone = completedTopics.has(topic.id);
+        category.topics.forEach(topic => {
             const topicItem = document.createElement('div');
-            topicItem.className = `topic-item ${isDone ? 'completed' : ''}`;
-
-            // Avoid embedding JSON in HTML (huge & slow). Lookup by id instead.
+            topicItem.className = `topic-item ${completedTopics.has(topic.id) ? 'completed' : ''}`;
+            
             topicItem.innerHTML = `
-                <div class="topic-item-content" onclick="loadTopicById('${categoryKey}','${topic.id}', event)">
-                    <div class="progress-indicator">${isDone ? '✓' : ''}</div>
+                <div class="topic-item-content" onclick="loadTopicById('${categoryKey}', '${topic.id}', this)">
+                    <div class="progress-indicator">${completedTopics.has(topic.id) ? '✓' : ''}</div>
                     <span>${topic.name}</span>
                 </div>
                 <div class="topic-item-actions">
@@ -380,21 +113,16 @@ function renderTopicsList() {
 
         categoryDiv.appendChild(categoryHeader);
         categoryDiv.appendChild(categoryItems);
-        frag.appendChild(categoryDiv);
+        topicsList.appendChild(categoryDiv);
     });
 
-    topicsList.appendChild(frag);
-
     const firstCategory = Object.keys(studyTopics)[0];
-    if (firstCategory) toggleCategory(firstCategory);
+    if (firstCategory) {
+        toggleCategory(firstCategory);
+    }
 }
 
 // Toggle category expansion
-function loadTopicById(categoryKey, topicId, evt) {
-    const topic = studyTopics?.[categoryKey]?.topics?.find(t => t.id === topicId);
-    if (topic) loadTopic(topic, evt);
-}
-
 function toggleCategory(categoryKey) {
     const categoryItems = document.getElementById(`category-${categoryKey}`);
     if (categoryItems) {
@@ -402,14 +130,23 @@ function toggleCategory(categoryKey) {
     }
 }
 
+// Load topic by id (fast, avoids embedding huge JSON in HTML)
+function loadTopicById(categoryKey, topicId, el) {
+    const topic = (studyTopics && studyTopics[categoryKey] && Array.isArray(studyTopics[categoryKey].topics))
+        ? studyTopics[categoryKey].topics.find(t => t.id === topicId)
+        : null;
+    if (!topic) return;
+    loadTopic(topic, el);
+}
+
 // Load topic content
-function loadTopic(topic, evt) {
+function loadTopic(topic, clickedEl) {
     currentTopic = topic;
     const contentArea = document.getElementById('contentArea');
 
     document.querySelectorAll('.topic-item').forEach(item => item.classList.remove('active'));
-    if (evt && evt.currentTarget) {
-        evt.currentTarget.closest('.topic-item')?.classList.add('active');
+    if (clickedEl) {
+        clickedEl.closest('.topic-item')?.classList.add('active');
     }
 
     let contentHTML = `
@@ -1799,17 +1536,100 @@ function deleteTopic(categoryKey, topicId) {
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
+    initIdentityGate();
     init();
 }
 
-// Keep handwriting canvas responsive
-window.addEventListener('resize', () => {
-    const modal = document.getElementById('handwritingPadModal');
-    if (modal && modal.classList.contains('active')) {
-        resizeHandwritingCanvasToContainer();
-    }
-});
 
+// ============================================
+// NETLIFY IDENTITY (Invite-only access)
+// ============================================
+function initIdentityGate() {
+    const gate = document.getElementById('authGate');
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const emailLabel = document.getElementById('userEmailDisplay');
+    const gateLogin = document.getElementById('authGateLogin');
+    const gateHelp = document.getElementById('authGateHelp');
+    const gateHelpText = document.getElementById('authGateHelpText');
+    const userHomeBtn = document.getElementById('userHomeBtn');
+
+    if (userHomeBtn) {
+        userHomeBtn.addEventListener('click', () => {
+            if (typeof openUserModal === 'function') openUserModal();
+        });
+    }
+
+    if (gateHelp && gateHelpText) {
+        gateHelp.addEventListener('click', () => {
+            gateHelpText.style.display = gateHelpText.style.display === 'none' ? 'block' : 'none';
+        });
+    }
+
+    if (!window.netlifyIdentity) {
+        console.warn('Netlify Identity widget not found. Did you include netlify-identity-widget.js?');
+        if (gate) gate.style.display = 'none';
+        return;
+    }
+
+    window.netlifyIdentity.init();
+
+    const openLogin = (mode = 'login') => {
+        try { window.netlifyIdentity.open(mode); } catch (e) { console.error(e); }
+    };
+
+    if (loginBtn) loginBtn.addEventListener('click', () => openLogin('login'));
+    if (gateLogin) gateLogin.addEventListener('click', () => openLogin('login'));
+    if (logoutBtn) logoutBtn.addEventListener('click', () => window.netlifyIdentity.logout());
+
+    const showGate = () => { if (gate) gate.style.display = 'flex'; };
+    const hideGate = () => { if (gate) gate.style.display = 'none'; };
+
+    const applyUserUI = (user) => {
+        if (emailLabel) emailLabel.textContent = user && user.email ? `✅ ${user.email}` : '';
+        if (loginBtn) loginBtn.style.display = user ? 'none' : '';
+        if (logoutBtn) logoutBtn.style.display = user ? '' : 'none';
+    };
+
+    const hash = window.location.hash || '';
+    if (hash.includes('invite_token=') || hash.includes('recovery_token=') || hash.includes('confirmation_token=')) {
+        openLogin('signup');
+    }
+
+    window.netlifyIdentity.on('init', (user) => {
+        if (user) {
+            setAuthUser(user);
+            applyUserUI(user);
+            hideGate();
+            loadProgress();
+            renderTopicsList();
+            updateProgress();
+        } else {
+            setAuthUser(null);
+            applyUserUI(null);
+            showGate();
+        }
+    });
+
+    window.netlifyIdentity.on('login', (user) => {
+        setAuthUser(user);
+        applyUserUI(user);
+        hideGate();
+        window.netlifyIdentity.close();
+        if (window.location.hash) {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+        loadProgress();
+        renderTopicsList();
+        updateProgress();
+    });
+
+    window.netlifyIdentity.on('logout', () => {
+        setAuthUser(null);
+        applyUserUI(null);
+        showGate();
+    });
+}
 
 // ============================================
 // HANDWRITTEN NOTES FUNCTIONALITY
@@ -1820,36 +1640,22 @@ function renderHandwrittenNotes(notes, topicId) {
     if (!notes || notes.length === 0) {
         return '<p style="color: var(--text-muted);">No handwritten notes yet. Click "New Note Pad" to start writing!</p>';
     }
-
-    return notes.map((note, index) => {
-        const w = note.width || 600;
-        return `
+    
+    return notes.map((note, index) => `
         <div class="handwritten-note" id="hw-${topicId}-${index}" data-index="${index}">
             <div class="handwritten-note-header">
                 <span class="handwritten-note-title">${note.title || 'Handwritten Note #' + (index + 1)}</span>
                 <div class="handwritten-note-actions">
                     <button class="edit-btn" onclick="editHandwrittenNote('${topicId}', ${index})">✏️ Edit</button>
-                    <button class="edit-btn" onclick="viewHandwrittenNoteFullscreen('${topicId}', ${index})">🖥️ Fullscreen</button>
                     <button class="delete-btn" onclick="deleteHandwrittenNote(${index})">🗑️ Delete</button>
                 </div>
             </div>
-
             <div class="handwritten-note-preview">
-                <div class="hw-preview-wrap" style="width:${w}px;">
-                    <img src="${note.data}" alt="Handwritten note" onclick="viewHandwrittenNoteFullscreen('${topicId}', ${index})">
-                </div>
-                <div class="hw-resize">
-                    <span>Size</span>
-                    <input type="range" min="260" max="1200" value="${w}"
-                        oninput="resizeHandwrittenPreview('${topicId}', ${index}, this.value)">
-                    <span id="hwSizeLabel-${topicId}-${index}">${w}px</span>
-                </div>
+                <img src="${note.data}" alt="Handwritten note" style="max-width: 100%; border-radius: 8px;">
             </div>
-
             ${note.caption ? `<div class="handwritten-note-caption">${note.caption}</div>` : ''}
         </div>
-        `;
-    }).join('');
+    `).join('');
 }
 
 // Add new handwritten note
@@ -1870,40 +1676,6 @@ function editHandwrittenNote(topicId, index) {
             break;
         }
     }
-}
-
-// Resize handwritten note preview (stored per note)
-function resizeHandwrittenPreview(topicId, index, widthPx) {
-    widthPx = parseInt(widthPx, 10) || 600;
-
-    for (const category of Object.values(studyTopics)) {
-        const topic = category.topics.find(t => t.id === topicId);
-        if (topic && topic.content?.handwrittenNotes?.[index]) {
-            topic.content.handwrittenNotes[index].width = widthPx;
-            saveProgress();
-
-            // Update label + wrapper width without full rerender
-            const label = document.getElementById(`hwSizeLabel-${topicId}-${index}`);
-            if (label) label.textContent = `${widthPx}px`;
-            const wrap = document.querySelector(`#hw-${topicId}-${index} .hw-preview-wrap`);
-            if (wrap) wrap.style.width = `${widthPx}px`;
-            break;
-        }
-    }
-}
-
-// View / edit handwritten note in fullscreen (same as Edit but fullscreen)
-function viewHandwrittenNoteFullscreen(topicId, index) {
-    editHandwrittenNote(topicId, index);
-    // Toggle fullscreen on next tick so modal is active
-    setTimeout(() => {
-        const modal = document.getElementById('handwritingPadModal');
-    if (modal) modal.classList.remove('fullscreen');
-        if (modal && !modal.classList.contains('fullscreen')) {
-            modal.classList.add('fullscreen');
-        }
-        resizeHandwritingCanvasToContainer();
-    }, 50);
 }
 
 // Delete handwritten note
@@ -1927,44 +1699,11 @@ let currentHandwritingNote = null;
 let currentHandwritingIndex = null;
 
 // Open handwriting pad modal
-
-function toggleHandwritingFullscreen() {
-    const modal = document.getElementById('handwritingPadModal');
-    if (!modal) return;
-    modal.classList.toggle('fullscreen');
-    resizeHandwritingCanvasToContainer();
-}
-
-// Keep canvas display scaled to fit the modal (internal image stays 800x600)
-function resizeHandwritingCanvasToContainer() {
-    const canvas = document.getElementById('handwritingCanvas');
-    const container = document.querySelector('#handwritingPadModal .handwriting-canvas-container');
-    if (!canvas || !container) return;
-
-    const isFullscreen = document.getElementById('handwritingPadModal')?.classList.contains('fullscreen');
-    const padding = 24;
-
-    const maxW = Math.max(260, container.clientWidth - padding);
-    const maxH = isFullscreen ? Math.max(260, window.innerHeight - 220) : Math.max(260, window.innerHeight * 0.55);
-
-    const ratio = 800 / 600; // 4:3
-    let displayW = maxW;
-    let displayH = displayW / ratio;
-    if (displayH > maxH) {
-        displayH = maxH;
-        displayW = displayH * ratio;
-    }
-
-    canvas.style.width = `${Math.floor(displayW)}px`;
-    canvas.style.height = `${Math.floor(displayH)}px`;
-}
-
 function openHandwritingPad(existingNote = null, index = null) {
     currentHandwritingNote = existingNote;
     currentHandwritingIndex = index;
     
     const modal = document.getElementById('handwritingPadModal');
-    if (modal) modal.classList.remove('fullscreen');
     const canvas = document.getElementById('handwritingCanvas');
     const ctx = canvas.getContext('2d');
     const titleInput = document.getElementById('handwritingTitle');
@@ -1973,7 +1712,6 @@ function openHandwritingPad(existingNote = null, index = null) {
     // Set canvas dimensions
     canvas.width = 800;
     canvas.height = 600;
-    resizeHandwritingCanvasToContainer();
     
     // Always start with white background
     ctx.fillStyle = '#ffffff';
