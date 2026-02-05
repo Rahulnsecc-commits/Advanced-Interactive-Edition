@@ -4,46 +4,6 @@ let currentTopic = null;
 let editingCategory = null;
 let editingTopic = null;
 
-// Auth + per-user storage (Netlify Identity)
-let AUTH = {
-    user: null,
-    storageKey: 'studyProgress::public'
-};
-
-function setAuthUser(user) {
-    AUTH.user = user || null;
-    const key = user && (user.id || user.email) ? (user.id || user.email) : 'public';
-    AUTH.storageKey = `studyProgress::${key}`;
-}
-
-function getProgressKey() {
-    return AUTH.storageKey || 'studyProgress::public';
-}
-
-// Debounced save to keep UI snappy
-let _saveTimer = null;
-function scheduleSaveProgress() {
-    if (_saveTimer) clearTimeout(_saveTimer);
-    _saveTimer = setTimeout(() => {
-        _saveTimer = null;
-        saveProgressNow();
-    }, 200);
-}
-
-function saveProgressNow() {
-    try {
-        const data = {
-            completed: Array.from(completedTopics),
-            studyTopics: studyTopics
-        };
-        localStorage.setItem(getProgressKey(), JSON.stringify(data));
-        showSavedIndicator();
-    } catch (e) {
-        console.error('Failed to save progress:', e);
-    }
-}
-
-
 // Initialize the app
 function init() {
     loadProgress();
@@ -53,10 +13,12 @@ function init() {
 
 // Load progress from localStorage
 function loadProgress() {
-    const saved = localStorage.getItem(getProgressKey());
+    const saved = localStorage.getItem('studyProgress');
     if (saved) {
         const data = JSON.parse(saved);
         completedTopics = new Set(data.completed || []);
+        
+        // Load edited content
         if (data.studyTopics) {
             studyTopics = data.studyTopics;
         }
@@ -65,8 +27,12 @@ function loadProgress() {
 
 // Save progress to localStorage
 function saveProgress() {
-    // Use debounced save to avoid UI stalls when adding categories/topics
-    scheduleSaveProgress();
+    const data = {
+        completed: Array.from(completedTopics),
+        studyTopics: studyTopics
+    };
+    localStorage.setItem('studyProgress', JSON.stringify(data));
+    showSavedIndicator();
 }
 
 // Render topics list in sidebar
@@ -98,7 +64,7 @@ function renderTopicsList() {
             topicItem.className = `topic-item ${completedTopics.has(topic.id) ? 'completed' : ''}`;
             
             topicItem.innerHTML = `
-                <div class="topic-item-content" onclick="loadTopicById('${categoryKey}', '${topic.id}', this)">
+                <div class="topic-item-content" onclick="loadTopic(${JSON.stringify(topic).replace(/"/g, '&quot;')})">
                     <div class="progress-indicator">${completedTopics.has(topic.id) ? '✓' : ''}</div>
                     <span>${topic.name}</span>
                 </div>
@@ -130,23 +96,14 @@ function toggleCategory(categoryKey) {
     }
 }
 
-// Load topic by id (fast, avoids embedding huge JSON in HTML)
-function loadTopicById(categoryKey, topicId, el) {
-    const topic = (studyTopics && studyTopics[categoryKey] && Array.isArray(studyTopics[categoryKey].topics))
-        ? studyTopics[categoryKey].topics.find(t => t.id === topicId)
-        : null;
-    if (!topic) return;
-    loadTopic(topic, el);
-}
-
 // Load topic content
-function loadTopic(topic, clickedEl) {
+function loadTopic(topic) {
     currentTopic = topic;
     const contentArea = document.getElementById('contentArea');
 
     document.querySelectorAll('.topic-item').forEach(item => item.classList.remove('active'));
-    if (clickedEl) {
-        clickedEl.closest('.topic-item')?.classList.add('active');
+    if (event && event.currentTarget) {
+        event.currentTarget.closest('.topic-item')?.classList.add('active');
     }
 
     let contentHTML = `
@@ -1536,100 +1493,9 @@ function deleteTopic(categoryKey, topicId) {
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
-    initIdentityGate();
     init();
 }
 
-
-// ============================================
-// NETLIFY IDENTITY (Invite-only access)
-// ============================================
-function initIdentityGate() {
-    const gate = document.getElementById('authGate');
-    const loginBtn = document.getElementById('loginBtn');
-    const logoutBtn = document.getElementById('logoutBtn');
-    const emailLabel = document.getElementById('userEmailDisplay');
-    const gateLogin = document.getElementById('authGateLogin');
-    const gateHelp = document.getElementById('authGateHelp');
-    const gateHelpText = document.getElementById('authGateHelpText');
-    const userHomeBtn = document.getElementById('userHomeBtn');
-
-    if (userHomeBtn) {
-        userHomeBtn.addEventListener('click', () => {
-            if (typeof openUserModal === 'function') openUserModal();
-        });
-    }
-
-    if (gateHelp && gateHelpText) {
-        gateHelp.addEventListener('click', () => {
-            gateHelpText.style.display = gateHelpText.style.display === 'none' ? 'block' : 'none';
-        });
-    }
-
-    if (!window.netlifyIdentity) {
-        console.warn('Netlify Identity widget not found. Did you include netlify-identity-widget.js?');
-        if (gate) gate.style.display = 'none';
-        return;
-    }
-
-    window.netlifyIdentity.init();
-
-    const openLogin = (mode = 'login') => {
-        try { window.netlifyIdentity.open(mode); } catch (e) { console.error(e); }
-    };
-
-    if (loginBtn) loginBtn.addEventListener('click', () => openLogin('login'));
-    if (gateLogin) gateLogin.addEventListener('click', () => openLogin('login'));
-    if (logoutBtn) logoutBtn.addEventListener('click', () => window.netlifyIdentity.logout());
-
-    const showGate = () => { if (gate) gate.style.display = 'flex'; };
-    const hideGate = () => { if (gate) gate.style.display = 'none'; };
-
-    const applyUserUI = (user) => {
-        if (emailLabel) emailLabel.textContent = user && user.email ? `✅ ${user.email}` : '';
-        if (loginBtn) loginBtn.style.display = user ? 'none' : '';
-        if (logoutBtn) logoutBtn.style.display = user ? '' : 'none';
-    };
-
-    const hash = window.location.hash || '';
-    if (hash.includes('invite_token=') || hash.includes('recovery_token=') || hash.includes('confirmation_token=')) {
-        openLogin('signup');
-    }
-
-    window.netlifyIdentity.on('init', (user) => {
-        if (user) {
-            setAuthUser(user);
-            applyUserUI(user);
-            hideGate();
-            loadProgress();
-            renderTopicsList();
-            updateProgress();
-        } else {
-            setAuthUser(null);
-            applyUserUI(null);
-            showGate();
-        }
-    });
-
-    window.netlifyIdentity.on('login', (user) => {
-        setAuthUser(user);
-        applyUserUI(user);
-        hideGate();
-        window.netlifyIdentity.close();
-        if (window.location.hash) {
-            history.replaceState(null, '', window.location.pathname + window.location.search);
-        }
-        loadProgress();
-        renderTopicsList();
-        updateProgress();
-    });
-
-    window.netlifyIdentity.on('logout', () => {
-        setAuthUser(null);
-        applyUserUI(null);
-        showGate();
-    });
-}
 
 // ============================================
 // HANDWRITTEN NOTES FUNCTIONALITY

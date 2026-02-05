@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GenAI Solution Architect - Advanced Study Guide</title>
-    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -28,6 +27,65 @@
         }
         .sidebar-header h1 { font-size: 1.3rem; margin-bottom: 5px; color: white; }
         .sidebar-header p { font-size: 0.85rem; opacity: 0.9; color: white; }
+
+        /* Auth UI */
+        .auth-bar {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .auth-user {
+            font-size: 0.8rem;
+            opacity: 0.95;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .auth-actions { display: flex; gap: 8px; }
+        .auth-actions button {
+            background: rgba(0,0,0,0.25);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: #fff;
+            padding: 8px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .auth-actions button:hover { background: rgba(0,0,0,0.35); }
+
+        .auth-overlay {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at top, rgba(118,185,0,0.15), rgba(0,0,0,0.85));
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 20px;
+        }
+        .auth-card {
+            width: min(520px, 95vw);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 22px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+        }
+        .auth-card h2 {
+            color: var(--primary);
+            margin-bottom: 10px;
+            font-size: 1.4rem;
+        }
+        .auth-card p { color: var(--text-light); opacity: 0.95; }
+        .auth-card-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
         .search-box { padding: 15px; border-bottom: 1px solid var(--border); }
         .search-box input {
             width: 100%; padding: 10px 15px; background: var(--bg-dark); border: 1px solid var(--border);
@@ -838,18 +896,32 @@
     </style>
 </head>
 <body>
+    <!-- Auth Gate -->
+    <div class="auth-overlay" id="authOverlay" aria-hidden="true">
+        <div class="auth-card">
+            <h2>🔐 Sign in required</h2>
+            <p>This study guide is protected. Please sign in with your Netlify Identity account.</p>
+            <div class="auth-card-actions">
+                <button class="btn btn-primary" id="overlayLoginBtn" type="button">Sign in</button>
+                <button class="btn btn-secondary" id="overlayReloadBtn" type="button">Reload</button>
+            </div>
+            <p style="margin-top: 12px; color: var(--text-muted); font-size: 0.9rem;">
+                If you were invited, open the invite link and the sign-up screen will appear automatically.
+            </p>
+        </div>
+    </div>
     <div class="container">
         <div class="sidebar">
             <div class="sidebar-header">
                 <h1>📚 GenAI Study Guide</h1>
                 <p>Advanced Interactive Edition</p>
-                <div class="sidebar-auth-row" style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                    <button class="btn btn-secondary" id="loginBtn" style="padding:8px 12px; font-size:0.85rem;">🔐 Login</button>
-                    <button class="btn btn-secondary" id="logoutBtn" style="padding:8px 12px; font-size:0.85rem; display:none;">🚪 Logout</button>
-                    <button class="btn btn-secondary" id="userHomeBtn" style="padding:8px 12px; font-size:0.85rem;">👤 Home</button>
-                    <span id="userEmailDisplay" style="font-size:0.8rem; color:rgba(255,255,255,0.9);"></span>
+                <div class="auth-bar">
+                    <div class="auth-user" id="authUser">Not signed in</div>
+                    <div class="auth-actions">
+                        <button id="loginBtn" type="button">Log in</button>
+                        <button id="logoutBtn" type="button" style="display:none;">Log out</button>
+                    </div>
                 </div>
-
             </div>
             <div class="search-box">
                 <input type="text" placeholder="🔍 Search topics..." oninput="handleSearch(event)">
@@ -1077,8 +1149,105 @@
         <span>Saved Successfully!</span>
     </div>
 
+    <script>
+        // Require auth for this page (app-advanced.js will not auto-start when this is true)
+        window.__AUTH_REQUIRED__ = true;
+    </script>
     <script src="data-latest.js"></script>
     <script src="app-advanced.js"></script>
+    <script>
+        (function () {
+            const overlay = document.getElementById('authOverlay');
+            const authUserEl = document.getElementById('authUser');
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const overlayLoginBtn = document.getElementById('overlayLoginBtn');
+            const overlayReloadBtn = document.getElementById('overlayReloadBtn');
+
+            function showOverlay() {
+                if (!overlay) return;
+                overlay.style.display = 'flex';
+                overlay.setAttribute('aria-hidden', 'false');
+            }
+            function hideOverlay() {
+                if (!overlay) return;
+                overlay.style.display = 'none';
+                overlay.setAttribute('aria-hidden', 'true');
+            }
+
+            function setUserUI(user) {
+                const email = user?.email || user?.user_metadata?.email || user?.user_metadata?.full_name || 'Signed in';
+                if (authUserEl) authUserEl.textContent = user ? email : 'Not signed in';
+                if (loginBtn) loginBtn.style.display = user ? 'none' : '';
+                if (logoutBtn) logoutBtn.style.display = user ? '' : 'none';
+            }
+
+            function openInviteIfPresent() {
+                try {
+                    const hash = window.location.hash || '';
+                    if (hash.includes('invite_token=')) {
+                        window.netlifyIdentity?.open('signup');
+                    }
+                } catch (e) {}
+            }
+
+            function startIfReady(user) {
+                setUserUI(user);
+                if (user) {
+                    hideOverlay();
+                    if (typeof window.startStudyGuide === 'function') {
+                        window.startStudyGuide();
+                    }
+                } else {
+                    showOverlay();
+                }
+            }
+
+            function openLogin() {
+                try { window.netlifyIdentity?.open('login'); } catch (e) {}
+            }
+
+            loginBtn?.addEventListener('click', openLogin);
+            overlayLoginBtn?.addEventListener('click', openLogin);
+            overlayReloadBtn?.addEventListener('click', () => window.location.reload());
+            logoutBtn?.addEventListener('click', () => {
+                try { window.netlifyIdentity?.logout(); } catch (e) {}
+            });
+
+            // Init Netlify Identity
+            if (window.netlifyIdentity) {
+                window.netlifyIdentity.on('init', (user) => {
+                    openInviteIfPresent();
+                    startIfReady(user);
+                });
+                window.netlifyIdentity.on('login', (user) => {
+                    window.netlifyIdentity.close();
+                    startIfReady(user);
+                });
+                window.netlifyIdentity.on('logout', () => {
+                    setUserUI(null);
+                    showOverlay();
+                });
+
+                // In case init already happened before our listeners were attached
+                try {
+                    const current = window.netlifyIdentity.currentUser();
+                    if (current) {
+                        startIfReady(current);
+                    } else {
+                        // Defer a bit to allow widget init
+                        setTimeout(() => startIfReady(window.netlifyIdentity.currentUser()), 50);
+                    }
+                } catch (e) {
+                    showOverlay();
+                }
+            } else {
+                // If identity widget isn't available, fall back to showing the page (no auth gate)
+                hideOverlay();
+                if (typeof window.startStudyGuide === 'function') window.startStudyGuide();
+            }
+        })();
+    </script>
     <script>
         // Update pen size display and preview
         function updatePenPreview() {
@@ -1108,26 +1277,5 @@
             updatePenPreview();
         });
     </script>
-
-    <!-- Auth Gate (Invite-only) -->
-    <div class="modal active" id="authGate" style="display:none;">
-        <div class="modal-content" style="max-width:520px;">
-            <div class="modal-header">
-                <h3 class="modal-title">🔐 Sign in required</h3>
-            </div>
-            <div style="padding: 5px 0 15px 0; color: var(--text-muted);">
-                This study guide is configured for <b>invite-only</b> access. Please log in with your invited email.
-            </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <button class="btn btn-primary" id="authGateLogin">Login</button>
-                <button class="btn btn-secondary" id="authGateHelp">Help</button>
-            </div>
-            <div id="authGateHelpText" style="display:none; margin-top:15px; color: var(--text-muted); font-size:0.9rem; line-height:1.6;">
-                If you opened an invite link, it should look like <code>#invite_token=...</code>. The login window should open automatically.
-                If it doesn't, click <b>Login</b> above.
-            </div>
-        </div>
-    </div>
-
 </body>
 </html>
